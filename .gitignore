@@ -1,0 +1,10 @@
+.env
+.venv/
+venv/
+data/raw/
+data/readmitiq.duckdb
+data/chroma/
+__pycache__/
+*.pyc
+.DS_Store
+models/
