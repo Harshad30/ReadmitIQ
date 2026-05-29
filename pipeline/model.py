@@ -1,4 +1,5 @@
 import duckdb # type: ignore
+import pickle
 import pandas as pd # type: ignore
 import numpy as np # type: ignore
 from pathlib import Path # type: ignore
@@ -161,12 +162,23 @@ def cross_validate(model, X, y):
     return scores
 
 
-def save_results(model, importance, cv_scores, baseline_auc, xgb_auc):
+def save_results(model, importance, cv_scores, baseline_auc, xgb_auc, encoders):
     # save model
     model.save_model(str(MODELS_DIR / "xgboost_readmission.json"))
 
-    # save feature importance
-    importance.to_csv(MODELS_DIR / "feature_importance.csv", index=False)
+    # save encoders
+    with open(MODELS_DIR / "encoders.pkl", "wb") as f:
+        pickle.dump(encoders, f)
+
+    # save feature list
+    feature_cols = CATEGORICAL_FEATURES + NUMERIC_FEATURES
+    with open(MODELS_DIR / "feature_cols.json", "w") as f:
+        json.dump(feature_cols, f)
+
+    # save label mappings for UI dropdowns
+    label_maps = {col: list(enc.classes_) for col, enc in encoders.items()}
+    with open(MODELS_DIR / "label_maps.json", "w") as f:
+        json.dump(label_maps, f)
 
     # save metrics summary
     metrics = {
@@ -179,7 +191,8 @@ def save_results(model, importance, cv_scores, baseline_auc, xgb_auc):
     with open(MODELS_DIR / "metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
 
-    print(f"\nModel saved to models/xgboost_readmission.json")
+    print(f"Model saved to models/xgboost_readmission.json")
+    print(f"Encoders saved to models/encoders.pkl")
     print(f"Metrics saved to models/metrics.json")
 
 
@@ -208,7 +221,7 @@ def run():
     cv_scores = cross_validate(xgb_model, X, y)
 
     # save everything
-    save_results(xgb_model, importance, cv_scores, baseline_auc, xgb_auc)
+    save_results(xgb_model, importance, cv_scores, baseline_auc, xgb_auc,encoders)
 
     print("\nModel training complete.")
 

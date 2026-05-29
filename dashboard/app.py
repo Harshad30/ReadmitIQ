@@ -395,7 +395,7 @@ def main():
 
     page = st.sidebar.radio(
         "Navigation",
-        ["📊 Dashboard", "🤖 AI Assistant"],
+        ["📊 Dashboard", "🎯 Risk Scorer","🤖 AI Assistant"],
         index=0
     )
 
@@ -412,6 +412,8 @@ def main():
         render_cost_analysis(filtered_df)
         render_model_performance(metrics, feature_importance)
 
+    elif page == "🎯 Risk Scorer":
+        render_risk_scorer()
     elif page == "🤖 AI Assistant":
         render_chat()
 
@@ -451,6 +453,197 @@ def render_chat():
             st.caption(f"Sources: {', '.join(sources)}")
 
         st.session_state.messages.append({"role": "assistant", "content": answer})
+
+
+@st.cache_resource
+def load_model():
+    import xgboost as xgb
+    import pickle
+    import json
+
+    model = xgb.XGBClassifier()
+    model.load_model(str(MODELS_DIR / "xgboost_readmission.json"))
+
+    with open(MODELS_DIR / "encoders.pkl", "rb") as f:
+        encoders = pickle.load(f)
+
+    with open(MODELS_DIR / "feature_cols.json") as f:
+        feature_cols = json.load(f)
+
+    with open(MODELS_DIR / "label_maps.json") as f:
+        label_maps = json.load(f)
+
+    return model, encoders, feature_cols, label_maps
+
+
+def render_risk_scorer():
+    st.title("🎯 Patient Readmission Risk Scorer")
+    st.caption("Enter patient characteristics to predict 30-day readmission risk")
+
+    model, encoders, feature_cols, label_maps = load_model()
+
+    st.divider()
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("#### Patient Demographics")
+        age_group = st.selectbox(
+            "Age Group",
+            options=label_maps.get("AGE_GROUP", ["Under 65", "65-74", "75-84", "85+"])
+        )
+        sex = st.selectbox(
+            "Sex",
+            options=label_maps.get("SEX", ["Male", "Female"])
+        )
+        race = st.selectbox(
+            "Race",
+            options=label_maps.get("RACE", ["White", "Black", "Hispanic", "Asian", "Other"])
+        )
+        state = st.selectbox(
+            "State",
+            options=sorted(label_maps.get("PRVDR_STATE_CD", ["NY", "CA", "TX"]))
+        )
+
+    with col2:
+        st.markdown("#### Admission Details")
+        admission_type = st.selectbox(
+            "Admission Type",
+            options=label_maps.get("ADMISSION_TYPE", ["Emergency", "Elective", "Urgent"])
+        )
+        dgns_category = st.selectbox(
+            "Diagnosis Category",
+            options=sorted(label_maps.get("DGNS_CATEGORY", ["Circulatory", "Respiratory"]))
+        )
+        discharge_status = st.selectbox(
+            "Discharge Status",
+            options=label_maps.get("DISCHARGE_STATUS", ["Home", "SNF", "Other"])
+        )
+        los_group = st.selectbox(
+            "Length of Stay",
+            options=label_maps.get("LOS_GROUP", ["1 day", "2-3 days", "4-7 days", "8-14 days", "15+ days"])
+        )
+
+    st.markdown("#### Financial Details")
+    st.caption("💡 Tip: Average charges are ~$8,400 for non-readmitted and ~$2,700 for readmitted patients. Lower charges often indicate shorter, more acute stays.")
+    col3, col4 = st.columns(2)
+    col3, col4 = st.columns(2)
+    with col3:
+        total_charges = st.number_input(
+            "Total Charges ($)",
+            min_value=0, max_value=500000,
+            value=6000, step=500
+        )
+
+        medicare_payment = st.number_input(
+            "Medicare Payment ($)",
+            min_value=0, max_value=200000,
+            value=3000, step=500
+        )
+        los_days = st.number_input(
+            "Length of Stay (days)",
+            min_value=0, max_value=100,
+            value=3, step=1
+        )
+    with col4:
+        medicare_payment = st.number_input(
+            "Medicare Payment ($)",
+            min_value=0, max_value=500000,
+            value=4000, step=500
+        )
+
+    cost_coverage = round(medicare_payment / total_charges, 4) if total_charges > 0 else 0
+
+    st.divider()
+
+    if st.button("🔍 Predict Readmission Risk", type="primary", use_container_width=True):
+        # build input dict
+        raw_input = {
+            "DGNS_CATEGORY": dgns_category,
+            "ADMISSION_TYPE": admission_type,
+            "DISCHARGE_STATUS": discharge_status,
+            "AGE_GROUP": age_group,
+            "SEX": sex,
+            "RACE": race,
+            "LOS_GROUP": los_group,
+            "PRVDR_STATE_CD": state,
+            "CLM_TOT_CHRG_AMT": total_charges,
+            "CLM_PMT_AMT": medicare_payment,
+            "CLM_UTLZTN_DAY_CNT": los_days,
+            "COST_COVERAGE_RATIO": cost_coverage,
+        }
+
+        # encode categoricals
+        encoded = {}
+        for col in feature_cols:
+            if col in encoders:
+                val = raw_input[col]
+                classes = list(encoders[col].classes_)
+                if val in classes:
+                    encoded[col] = encoders[col].transform([val])[0]
+                else:
+                    encoded[col] = 0
+            else:
+                encoded[col] = raw_input[col]
+
+        # build dataframe in correct feature order
+        import pandas as pd
+        input_df = pd.DataFrame([encoded])[feature_cols]
+
+        # predict
+        risk_prob = model.predict_proba(input_df)[0][1]
+        risk_pct = round(risk_prob * 100, 1)
+
+        # display result
+        st.divider()
+        st.markdown("### Prediction Result")
+
+        if risk_pct < 20:
+            risk_level = "🟢 Low Risk"
+            color = "#00aa44"
+            recommendation = "Standard discharge planning. Schedule routine follow-up within 14 days."
+        elif risk_pct < 40:
+            risk_level = "🟡 Medium Risk"
+            color = "#ffaa00"
+            recommendation = "Enhanced discharge planning recommended. Follow-up call within 72 hours. Consider transitional care program."
+        elif risk_pct < 60:
+            risk_level = "🟠 High Risk"
+            color = "#ff6600"
+            recommendation = "High-intensity discharge planning required. Home health referral recommended. Follow-up within 48 hours."
+        else:
+            risk_level = "🔴 Very High Risk"
+            color = "#cc0000"
+            recommendation = "Consider extended stay or SNF placement. Immediate care coordinator assignment. Daily follow-up calls post-discharge."
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown(f"""
+            <div style="background:#1a1a1a; border-left: 6px solid {color};
+                        padding: 2rem; border-radius: 8px; text-align:center;">
+                <div style="font-size:3rem; font-weight:bold; color:{color}">
+                    {risk_pct}%
+                </div>
+                <div style="font-size:1.2rem; color:{color}; margin-top:0.5rem">
+                    {risk_level}
+                </div>
+                <div style="color:#aaa; margin-top:0.5rem; font-size:0.85rem">
+                    30-Day Readmission Probability
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_b:
+            st.markdown("#### Clinical Recommendation")
+            st.info(recommendation)
+            st.markdown("#### Key Risk Factors for This Patient")
+            # show top factors based on feature importance
+            fi = pd.read_csv(MODELS_DIR / "feature_importance.csv")
+            top_features = fi.head(5)["feature"].tolist()
+            for feat in top_features:
+                display_val = raw_input.get(feat, "N/A")
+                st.markdown(f"- **{feat}:** {display_val}")
+
+        st.caption("⚠️ This prediction is based on synthetic Medicare data and is for demonstration purposes only. Not for clinical use.")
 
 if __name__ == "__main__":
     main()

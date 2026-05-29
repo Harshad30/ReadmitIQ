@@ -1,7 +1,7 @@
 {
-  "baseline_auc": 0.772,
+  "baseline_auc": 0.773,
   "xgboost_auc": 0.908,
-  "cv_mean_auc": 0.907,
+  "cv_mean_auc": 0.908,
   "cv_std": 0.004,
-  "improvement_over_baseline": 0.136
+  "improvement_over_baseline": 0.135
 }
