@@ -31,19 +31,35 @@ ReadmitIQ transforms raw Medicare claims data into actionable intelligence throu
 ## 🏗️ Architecture
 
 ```mermaid
-flowchart TD
-    A[Raw TSV Files] --> B[pipeline/ingest.py]
-    B --> C[pipeline/features.py]
-    C --> D[data/readmitiq.duckdb]
+flowchart LR
 
-    D --> E[pipeline/model.py]
-    E --> F[models/<br/>Saved Model<br/>Feature Importance<br/>Metrics]
+    A["Raw TSV Files"]
+    B["pipeline/ingest.py"]
+    C["pipeline/features.py"]
+    D["DuckDB"]
 
-    D --> G[chat/embeddings.py]
-    G --> H[data/chroma/<br/>Vector Store (ChromaDB)]
+    E["XGBoost Model"]
+    F["Model Artifacts"]
 
-    D --> I[dashboard/app.py]
-    I --> J[Streamlit Dashboard<br/>+ RAG Chat Interface]
+    G["Embeddings Pipeline"]
+    H["ChromaDB"]
+
+    I["Streamlit Dashboard"]
+    J["RAG Chat"]
+
+    A --> B
+    B --> C
+    C --> D
+
+    D --> E
+    E --> F
+
+    D --> G
+    G --> H
+
+    D --> I
+    H --> J
+    I --> J
 ```
 ---
 
