@@ -19,6 +19,10 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+def chart_help(text: str):
+    with st.popover("ℹ️"):
+        st.markdown(text)
+
 
 # ── Custom CSS ──────────────────────────────────────────────────────────────
 st.markdown("""
@@ -176,14 +180,22 @@ def render_charts(df):
     col1, col2 = st.columns(2)
 
     with col1:
-        # readmission rate by age group
+        chart_help("""
+        **What it shows:** The 30-day readmission rate for each patient age group.
+        
+        **How to read it:** Taller bar = more patients from that age group are returning 
+        to the hospital within 30 days of discharge. Red bars indicate higher risk.
+        
+        **Why it matters:** Older patients have more complex conditions and weaker 
+        support systems, making them more likely to be readmitted. Hospitals use this 
+        to prioritize discharge planning resources.
+        """)
         age_data = (
             df.groupby("AGE_GROUP", observed=True)["READMITTED_30D"]
             .agg(["mean", "count"])
             .reset_index()
         )
         age_data["rate"] = age_data["mean"] * 100
-
         fig = px.bar(
             age_data, x="AGE_GROUP", y="rate",
             title="30-Day Readmission Rate by Age Group",
@@ -197,7 +209,15 @@ def render_charts(df):
         st.plotly_chart(fig, width="stretch")
 
     with col2:
-        # readmission rate by diagnosis category
+        chart_help("""
+        **What it shows:** The top 10 diagnosis categories ranked by readmission rate.
+        
+        **How to read it:** Longer bar = patients with that type of condition are more 
+        likely to be readmitted within 30 days. Categories are sorted highest to lowest.
+        
+        **Why it matters:** Helps hospitals identify which clinical departments need 
+        stronger post-discharge protocols and care coordination.
+        """)
         dgns_data = (
             df.groupby("DGNS_CATEGORY")["READMITTED_30D"]
             .agg(["mean", "count"])
@@ -205,7 +225,6 @@ def render_charts(df):
         )
         dgns_data["rate"] = dgns_data["mean"] * 100
         dgns_data = dgns_data.sort_values("rate", ascending=True).tail(10)
-
         fig = px.bar(
             dgns_data, x="rate", y="DGNS_CATEGORY",
             orientation="h",
@@ -220,14 +239,21 @@ def render_charts(df):
     col3, col4 = st.columns(2)
 
     with col3:
-        # length of stay distribution
+        chart_help("""
+        **What it shows:** How length of hospital stay relates to readmission risk.
+        
+        **How to read it:** Each bar represents patients grouped by how long they stayed. 
+        The height shows what percentage of that group came back within 30 days.
+        
+        **Why it matters:** Very short stays (1 day) may indicate premature discharge — 
+        patients sent home before they're clinically stable, leading to higher readmissions.
+        """)
         los_data = (
             df.groupby("LOS_GROUP", observed=True)["READMITTED_30D"]
             .agg(["mean", "count"])
             .reset_index()
         )
         los_data["rate"] = los_data["mean"] * 100
-
         fig = px.bar(
             los_data, x="LOS_GROUP", y="rate",
             title="Readmission Rate by Length of Stay",
@@ -241,14 +267,22 @@ def render_charts(df):
         st.plotly_chart(fig, width="stretch")
 
     with col4:
-        # admission type breakdown
+        chart_help("""
+        **What it shows:** Readmission rates broken down by how the patient was admitted.
+        
+        **How to read it:** Emergency admissions are unplanned and typically involve 
+        sicker patients, so higher readmission rates are expected. Elective admissions 
+        are planned procedures with better preparation and lower risk.
+        
+        **Why it matters:** A hospital with unusually high elective readmissions may 
+        have gaps in pre-surgical preparation or post-operative care protocols.
+        """)
         adm_data = (
             df.groupby("ADMISSION_TYPE")["READMITTED_30D"]
             .agg(["mean", "count"])
             .reset_index()
         )
         adm_data["rate"] = adm_data["mean"] * 100
-
         fig = px.bar(
             adm_data, x="ADMISSION_TYPE", y="rate",
             title="Readmission Rate by Admission Type",
@@ -266,6 +300,17 @@ def render_charts(df):
 def render_state_map(df):
     st.divider()
     st.markdown('<div class="section-header">Geographic Analysis</div>', unsafe_allow_html=True)
+
+    chart_help("""
+    **What it shows:** 30-day readmission rates across all US states.
+    
+    **How to read it:** Darker red = higher readmission rate in that state. 
+    Hover over any state to see the exact rate and number of admissions.
+    
+    **Why it matters:** Geographic variation in readmission rates can indicate 
+    differences in healthcare quality, patient demographics, or access to 
+    post-discharge follow-up care across regions.
+    """)
 
     state_data = (
         df.groupby("PRVDR_STATE_CD")["READMITTED_30D"]
@@ -330,7 +375,18 @@ def render_model_performance(metrics, feature_importance):
 def render_cost_analysis(df):
     st.divider()
     st.markdown('<div class="section-header">Cost Analysis</div>', unsafe_allow_html=True)
-
+    chart_help("""
+    **What it shows:** How hospital costs differ across diagnosis categories 
+    and between readmitted vs non-readmitted patients.
+    
+    **How to read it:** Left chart compares what hospitals bill (total charges) 
+    vs what Medicare actually pays across diagnosis types. Right chart compares 
+    average costs between patients who were readmitted vs those who weren't.
+    
+    **Why it matters:** The counterintuitive finding — readmitted patients have 
+    LOWER initial charges — suggests they were discharged too quickly before 
+    being fully stabilized, leading to costly return visits.
+    """)
     col1, col2 = st.columns(2)
 
     with col1:
