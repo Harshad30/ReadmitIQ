@@ -56,6 +56,20 @@ DISCHARGE_STATUS = {
     "82": "State Hospital",
 }
 
+# ── CMS numeric state code → two-letter abbreviation ──────────────────────
+CMS_STATE_CODES = {
+    1: "AL", 2: "AK", 3: "AZ", 4: "AR", 5: "CA",
+    6: "CO", 7: "CT", 8: "DE", 9: "FL", 10: "GA",
+    11: "HI", 12: "ID", 13: "IL", 14: "IN", 15: "IA",
+    16: "KS", 17: "KY", 18: "LA", 19: "ME", 20: "MD",
+    21: "MA", 22: "MI", 23: "MN", 24: "MS", 25: "MO",
+    26: "MT", 27: "NE", 28: "NV", 29: "NH", 30: "NJ",
+    31: "NM", 32: "NY", 33: "NC", 34: "ND", 35: "OH",
+    36: "OK", 37: "OR", 38: "PA", 39: "RI", 40: "SC",
+    41: "SD", 42: "TN", 43: "TX", 44: "UT", 45: "VT",
+    46: "VA", 47: "WA", 48: "WV", 49: "WI", 50: "WY",
+    51: "DC", 52: "PR", 53: "VI",
+}
 
 def load_tables(con) -> tuple[pd.DataFrame, pd.DataFrame]:
     inpatient = con.execute("SELECT * FROM inpatient_claims").df()
@@ -114,6 +128,22 @@ def engineer_features(inpatient: pd.DataFrame, beneficiary: pd.DataFrame) -> pd.
     ).round(4)
 
     # ── Length of stay buckets ─────────────────────────────────────────────
+    # ── Fix Length of Stay ─────────────────────────────────────────────────
+    # CLM_UTLZTN_DAY_CNT is unpopulated in synthetic data
+    # calculate from actual admission and discharge dates instead
+    df["CLM_ADMSN_DT"] = pd.to_datetime(df["CLM_ADMSN_DT"])
+    df["NCH_BENE_DSCHRG_DT"] = pd.to_datetime(df["NCH_BENE_DSCHRG_DT"])
+    df["CLM_UTLZTN_DAY_CNT"] = (
+        df["NCH_BENE_DSCHRG_DT"] - df["CLM_ADMSN_DT"]
+    ).dt.days.clip(lower=0)
+
+    # ── Fix state codes → two-letter abbreviations ─────────────────────────
+    df["PRVDR_STATE_CD"] = (
+        pd.to_numeric(df["PRVDR_STATE_CD"], errors="coerce")
+        .map(CMS_STATE_CODES)
+    )
+
+    # ── Recalculate LOS groups with real LOS ───────────────────────────────
     df["LOS_GROUP"] = pd.cut(
         df["CLM_UTLZTN_DAY_CNT"],
         bins=[-1, 1, 3, 7, 14, 1000],
